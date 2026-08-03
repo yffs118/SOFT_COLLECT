@@ -38,28 +38,46 @@ jobs:
           git reset --hard origin/$DEFAULT_BRANCH
           git clean -fdx
 
-      # ---------- 4. 同步子仓库（TVAPP 等）—— 只覆盖，不删除 ----------
+      # ---------- 4. 同步子仓库（TVAPP 等）—— 只覆盖，不删除（含调试信息） ----------
       - name: Fetch subprojects（只覆盖，不删除）
         run: |
           declare -A repos=(
-            [iptv-api]="https://github.com/Guovin/iptv-api.git" 
-            [TVBox_live]="https://github.com/Supprise0901/TVBox_live.git" 
-            [clash]="https://github.com/clash-download/Clash.git"  
-            [fanqiang]="https://github.com/free-nodes/fanqiang.git"  
-            [TVAPP]="https://github.com/youhunwl/TVAPP.git" 
-            [tvbox-source-aggregator]="https://github.com/riowang88/tvbox-source-aggregator.git"      
+            [TVAPP]="https://github.com/youhunwl/TVAPP.git"
             # 可按需添加更多，格式：[子目录名]="仓库URL"
           )
           for name in "${!repos[@]}"; do
             echo "→ 同步 $name"
             rm -rf "temp-$name"
-            git clone --depth 1 "${repos[$name]}" "temp-$name" || {
+            
+            # 克隆并捕获输出
+            if git clone --depth 1 --verbose "${repos[$name]}" "temp-$name"; then
+              echo "✔ 克隆成功: $name"
+            else
               echo "❌ 克隆失败 $name，跳过（保留原有文件夹）"
               rm -rf "temp-$name"
               continue
-            }
+            fi
+            
+            # 检查临时目录中的文件数量（排除 .git）
+            file_count=$(find "temp-$name" -type f ! -path "*/\.git/*" | wc -l)
+            echo "  → 临时目录中文件数（不含 .git）: $file_count"
+            
+            # 如果文件数为 0，可能仓库为空，输出警告
+            if [ "$file_count" -eq 0 ]; then
+              echo "⚠️ 警告: 仓库 $name 似乎没有文件，将创建空目录"
+            fi
+            
             mkdir -p "$name"
-            rsync -a --exclude='.git' "temp-$name"/ "$name"/   # 无 --delete
+            rsync -a --exclude='.git' "temp-$name"/ "$name"/
+            
+            # 检查目标目录的文件数量
+            target_count=$(find "$name" -type f | wc -l)
+            echo "  → 目标目录 $name 现有文件数: $target_count"
+            
+            # 列出前几个文件（便于调试）
+            echo "  → 目标目录前 5 个文件:"
+            find "$name" -type f | head -5 || echo "    (空)"
+            
             rm -rf "temp-$name"
           done
 
